@@ -18,8 +18,8 @@ own tools, so there is nothing to port to Windows or macOS.
   hover to try the arrow, text, busy, resize and link cursors before applying anything.
 - **Any folder**: point the app at the folder where you keep your cursor packs. Zips are
   read in place, including bundles of several packs, and preview pictures are ignored.
-- **Bring your own cursors**: no packs are included (they belong to their artists), the
-  sidebar links to creators whose zips drop straight in.
+- **Bring your own cursors**: only a simple self-drawn demo set is built in. Real packs
+  belong to their artists; the sidebar links to creators whose zips drop straight in.
 - **System tray**: closing the window keeps it in the tray. The tray, window and taskbar
   icon all show the cursor that is currently applied.
 - **Live size control**, hotspot editing for plain images, run-at-login, and a proper
@@ -61,8 +61,9 @@ Prefer to do it by hand? `python3 -m venv --system-site-packages .venv`, then
 
 Launch **Cursor Manager** from the application menu (or run `./cursor-manager`).
 On the first start it asks **where your cursors are**: pick the folder you keep your
-cursor packs in, or accept the default `Cursors_Imgs` folder inside the project. The app
-ships without any cursor packs, so grab a few from the artists linked in the sidebar.
+cursor packs in, or accept the default `Cursors_Imgs` folder inside the project. Only the
+built-in demo set comes with the app, so grab a few packs from the artists linked in the
+sidebar.
 You can change it later with **Change folder…** at the top of the set list.
 
 Then drop cursor packs into that folder and press **Rescan**.
@@ -154,7 +155,9 @@ Then delete the project folder. Your cursor packs folder is never touched.
 
 Code by [Newton667](https://github.com/Newton667), released under the [MIT license](LICENSE).
 
-No cursor packs are included in this repository. Cursor packs are the work of their
-artists and most of them prohibit redistribution; download them from the creators linked
-above and keep them in your own cursors folder (see `THIRD_PARTY_NOTICE.md`). Thanks to
-those artists for making animated cursors that are fun to use.
+The only cursor set in this repository is the built-in **Demo Cursor**, drawn from scratch
+for this project (MIT). Artists' cursor packs are never included: they are the work of
+their creators and most prohibit redistribution, so download them from the creators
+linked above and keep them in your own cursors folder (see `THIRD_PARTY_NOTICE.md`).
+The screenshot above shows only the demo set for the same reason. Thanks to those artists
+for making animated cursors that are fun to use.

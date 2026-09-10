@@ -740,7 +740,7 @@ class MainWindow(QMainWindow):
         box.setText("Where are your cursors?")
         box.setInformativeText(
             "Cursor Manager reads cursor packs (.zip, .ani, .cur, .png, .gif) from a folder you choose. "
-            "No packs are included; the sidebar links to artists who make them.\n\n"
+            "Only a simple demo set is built in; the sidebar links to artists who make real ones.\n\n"
             f"Pick a folder now, or use the default one:\n{default}")
         choose = box.addButton("Choose a folder…", QMessageBox.ButtonRole.AcceptRole)
         use_default = box.addButton("Use the default folder", QMessageBox.ButtonRole.ActionRole)
