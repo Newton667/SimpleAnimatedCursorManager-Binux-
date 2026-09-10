@@ -1,0 +1,14 @@
+# Your own cursor collection stays on your machine
+Cursors_Imgs/
+
+# Cursor packs are the artists' work and are never committed
+assets/bundled/*
+!assets/bundled/README.md
+
+# Local environment and generated files
+.venv/
+cursor-manager.desktop
+__pycache__/
+*.pyc
+*.log
+.pytest_cache/

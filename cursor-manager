@@ -1,0 +1,290 @@
+#!/usr/bin/env python3
+"""Cursor Manager command line.  https://github.com/Newton667/SimpleAnimatedCursorManager-inux-
+
+  cursor-manager [gui]        open the app (default); add --hidden to start in the tray only
+  cursor-manager daemon       run the rotation loop in the foreground
+  cursor-manager start|stop   start/stop the rotation daemon in the background
+  cursor-manager next         switch to the next cursor set now
+  cursor-manager status       show current set, daemon state and timing
+  cursor-manager list         list the cursor sets (built-in + your folder)
+  cursor-manager folder [DIR] show or change the folder your cursors are read from
+  cursor-manager apply NAME   apply one set (by name or id) without rotating
+  cursor-manager build        rebuild all cursor themes
+                              --pending: only sets not built yet   --set ID: one set   --quiet
+  cursor-manager restore      go back to the original cursor theme
+  cursor-manager autostart on|off   run the rotation at login
+  cursor-manager install      add Cursor Manager to the application menu
+  cursor-manager check        verify Python, dependencies and desktop tools
+  cursor-manager uninstall    remove themes, menu/autostart entries (add --purge to drop settings too)
+"""
+import os
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+
+# Prefer the project's virtualenv (created by install.sh) over the system Python.
+_VENV = HERE / ".venv"
+_VENV_PY = _VENV / "bin" / "python"
+if _VENV_PY.exists() and Path(sys.prefix).resolve() != _VENV.resolve() and not os.environ.get("CURSOR_MANAGER_NO_VENV"):
+    os.execv(str(_VENV_PY), [str(_VENV_PY), str(HERE / "cursor-manager"), *sys.argv[1:]])
+
+import ctypes  # noqa: E402
+import shutil  # noqa: E402
+import subprocess  # noqa: E402
+import time  # noqa: E402
+import uuid  # noqa: E402
+
+sys.path.insert(0, str(HERE))
+
+from cursor_manager import __version__, config, daemon, sets as sets_mod, startup, theme  # noqa: E402
+
+DEPS = (("PySide6", "PySide6"), ("PIL", "Pillow"))
+
+
+def _missing_deps(names=("PySide6", "PIL")):
+    missing = []
+    for mod, pkg in DEPS:
+        if mod not in names:
+            continue
+        try:
+            __import__(mod)
+        except ImportError:
+            missing.append(pkg)
+    return missing
+
+
+def _complain(title: str, msg: str) -> None:
+    """Report a setup problem on the terminal and, when launched from the desktop, in a dialog."""
+    print(f"{title}\n{msg}", file=sys.stderr)
+    if sys.stderr.isatty():
+        return
+    for tool, args in (("kdialog", ["--title", title, "--error", msg]),
+                       ("zenity", ["--error", "--title", title, "--text", msg]),
+                       ("notify-send", [title, msg])):
+        if shutil.which(tool):
+            subprocess.run([tool, *args], check=False)
+            return
+
+
+def _require(names) -> bool:
+    missing = _missing_deps(names)
+    if not missing:
+        return True
+    _complain("Cursor Manager is not set up yet",
+              f"Missing Python packages: {', '.join(missing)}.\n\n"
+              f"Run the installer once:\n  {HERE}/install.sh\n\n"
+              "It creates a private virtualenv (.venv) and installs everything needed.")
+    return False
+
+
+def _check() -> int:
+    ok = True
+    print(f"Cursor Manager {__version__}  ({config.PROJECT_URL})")
+    print(f"python        : {sys.version.split()[0]} at {sys.executable}")
+    print(f"virtualenv    : {'yes (' + str(_VENV) + ')' if Path(sys.prefix).resolve() == _VENV.resolve() else 'no (system Python)'}")
+    if sys.version_info < (3, 9):
+        print("  !! Python 3.9 or newer is required"); ok = False
+    for mod, pkg in DEPS:
+        try:
+            m = __import__(mod)
+            print(f"{pkg:14}: {getattr(m, '__version__', 'ok')}")
+        except ImportError:
+            print(f"{pkg:14}: MISSING"); ok = False
+    session = os.environ.get("XDG_SESSION_TYPE", "?")
+    desktop = os.environ.get("XDG_CURRENT_DESKTOP", "?")
+    print(f"desktop       : {desktop} ({session})")
+    for tool in ("plasma-apply-cursortheme", "gsettings", "systemd-run"):
+        print(f"{tool:14}: {'found' if shutil.which(tool) else 'not found'}")
+    if not shutil.which("plasma-apply-cursortheme"):
+        print("  note: live switching is built for KDE Plasma; other desktops only get the gsettings path")
+    print("result        :", "OK" if ok else "problems found")
+    return 0 if ok else 1
+
+
+def _uninstall(purge: bool) -> int:
+    if daemon.is_running():
+        daemon.stop(); print("stopped rotation")
+    try:
+        print(theme.restore_original())
+    except Exception as exc:  # noqa: BLE001
+        print(f"could not restore the original cursor: {exc}")
+    startup.set_autostart(False)
+    startup.remove_menu_entry()
+    theme.remove_all()
+    shutil.rmtree(config.CACHE_DIR, ignore_errors=True)
+    print("removed generated themes, cache, menu and autostart entries")
+    if purge:
+        shutil.rmtree(config.CONFIG_DIR, ignore_errors=True)
+        shutil.rmtree(config.STATE_DIR, ignore_errors=True)
+        print("removed settings and state")
+    print(f"You can now delete the folder {HERE} (and its .venv).")
+    return 0
+
+
+UNIT_PREFIX = "app-cursor\\x2dmanager"     # systemd escaping of "cursor-manager", Plasma's convention
+DESCRIPTIONS = {"gui": "Cursor Manager", "daemon": "Cursor Manager (rotation)"}
+
+
+def _set_process_name(name: str = "cursor-manager") -> None:
+    """Show up as 'cursor-manager' instead of 'python3' in process lists."""
+    try:
+        ctypes.CDLL(None).prctl(15, name.encode()[:15], 0, 0, 0)   # PR_SET_NAME
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _in_own_unit() -> bool:
+    try:
+        return UNIT_PREFIX in Path("/proc/self/cgroup").read_text()
+    except OSError:
+        return False
+
+
+def _relaunch_under_systemd(cmd: str, rest: list) -> "int | None":
+    """Run gui/daemon as their own systemd user unit (like Plasma does for apps), so
+    System Monitor lists them as 'Cursor Manager' with the right icon instead of
+    burying them under the terminal they were started from."""
+    if (os.environ.get("CURSOR_MANAGER_NO_SYSTEMD") or "--foreground" in rest or "--screenshot" in rest
+            or _in_own_unit() or not shutil.which("systemd-run")):
+        return None
+    unit = f"{UNIT_PREFIX}@{uuid.uuid4().hex}.service"
+    args = ["systemd-run", "--user", "--quiet", "--collect", "--same-dir",
+            f"--unit={unit}", f"--description={DESCRIPTIONS[cmd]}"]
+    for k in ("WAYLAND_DISPLAY", "DISPLAY", "XAUTHORITY", "XDG_SESSION_TYPE", "XDG_CURRENT_DESKTOP",
+              "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME",
+              "DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR", "QT_QPA_PLATFORMTHEME", "PATH", "HOME", "LANG"):
+        if k in os.environ:
+            args.append(f"--setenv={k}")
+    args += ["--", sys.executable, str(Path(__file__).resolve()), cmd, *rest, "--foreground"]
+    r = subprocess.run(args)
+    if r.returncode != 0:
+        return None          # fall back to running in place
+    return 0
+
+
+def _find(name):
+    for s in sets_mod.scan():
+        if name.lower() in (s.name.lower(), s.id.lower()):
+            return s
+    for s in sets_mod.scan():
+        if name.lower() in s.name.lower():
+            return s
+    sys.exit(f"no cursor set matching '{name}'")
+
+
+def main(argv):
+    cmd = argv[1] if len(argv) > 1 else "gui"
+    _set_process_name()
+    if cmd in DESCRIPTIONS:
+        rc = _relaunch_under_systemd(cmd, argv[2:])
+        if rc is not None:
+            return rc
+    cfg = config.load_config()
+    if cmd in ("-h", "--help", "help"):
+        print(__doc__)
+        return 0
+    if cmd in ("--version", "version"):
+        print(f"cursor-manager {__version__}")
+        return 0
+    if cmd == "check":
+        return _check()
+    if cmd == "uninstall":
+        return _uninstall("--purge" in argv)
+    if cmd == "gui":
+        if not _require(("PySide6", "PIL")):
+            return 1
+        from cursor_manager.gui import main as gui_main
+        return gui_main()
+    if cmd == "daemon":
+        if not _require(("PIL",)):
+            return 1
+        return daemon.run()
+    if cmd == "start":
+        if daemon.is_running():
+            print("rotation already running")
+            return 0
+        subprocess.Popen([sys.executable, __file__, "daemon"], start_new_session=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        for _ in range(30):
+            if daemon.is_running():
+                break
+            time.sleep(0.1)
+        print("rotation started" if daemon.is_running() else "failed to start (see log)")
+        return 0
+    if cmd == "stop":
+        print("rotation stopped" if daemon.stop() else "rotation was not running")
+        return 0
+    if cmd == "next":
+        if daemon.skip():
+            print("switching")
+        else:
+            order = sets_mod.enabled_sets(sets_mod.scan(), cfg)
+            nxt = daemon._pick_next(order, config.load_state().get("current_set"), cfg.get("shuffle"))
+            if nxt is None:
+                sys.exit("no cursor sets found")
+            print(theme.apply_set(nxt, cfg))
+        return 0
+    if cmd == "status":
+        st = config.load_state()
+        print(f"images folder : {cfg['images_dir']}")
+        print(f"daemon        : {'running (pid %s)' % daemon.running_pid() if daemon.is_running() else 'stopped'}")
+        print(f"interval      : {cfg['interval_seconds']} s  shuffle={cfg.get('shuffle')}")
+        print(f"current theme : {theme.current_theme()}  (set: {st.get('current_set')})")
+        print(f"original theme: {st.get('original_theme')}")
+        if st.get("next_change"):
+            print(f"next change in: {max(0, int(st['next_change'] - time.time()))} s")
+        print(f"autostart     : {'on' if startup.autostart_enabled() else 'off'}")
+        return 0
+    if cmd == "list":
+        disabled = set(cfg.get("disabled_sets", []))
+        for s in sets_mod.scan():
+            flag = " " if s.id not in disabled else "x"
+            tag = " [built-in]" if s.bundled else ""
+            print(f"[{flag}] {s.name}{tag}  ({s.kind}, {len(s.roles)} role(s), id={s.id})")
+        return 0
+    if cmd == "folder":
+        if len(argv) > 2:
+            cfg["images_dir"] = str(Path(argv[2]).expanduser().resolve())
+            config.save_config(cfg)
+        print(cfg["images_dir"])
+        return 0
+    if cmd == "apply":
+        if len(argv) < 3:
+            sys.exit("usage: cursor-manager apply NAME")
+        print(theme.apply_set(_find(argv[2]), cfg))
+        return 0
+    if cmd == "build":
+        if not _require(("PIL",)):
+            return 1
+        quiet = "--quiet" in argv
+        all_sets = sets_mod.scan()
+        say = (lambda *a: None) if quiet else print
+        if "--set" in argv:
+            wanted = argv[argv.index("--set") + 1]
+            for s in all_sets:
+                if s.id == wanted:
+                    theme.build_theme(s, cfg)
+                    say(f"built {s.name}")
+            return 0
+        force = "--pending" not in argv
+        theme.build_all(all_sets, cfg, force=force, progress=lambda i, n, s: say(f"[{i+1}/{n}] {s.name}"))
+        say(f"built {len(all_sets)} theme(s) in {config.ICONS_DIR}")
+        return 0
+    if cmd == "restore":
+        print(theme.restore_original())
+        return 0
+    if cmd == "autostart":
+        on = len(argv) > 2 and argv[2].lower() in ("on", "1", "true", "yes")
+        startup.set_autostart(on)
+        print(f"autostart {'enabled' if on else 'disabled'} ({config.AUTOSTART_FILE})")
+        return 0
+    if cmd == "install":
+        print(f"installed {startup.install_menu_entry()}")
+        return 0
+    print(__doc__)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

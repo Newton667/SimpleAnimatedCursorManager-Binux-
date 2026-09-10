@@ -1,0 +1,258 @@
+"""Build Xcursor themes from cursor sets and apply them to the desktop."""
+from __future__ import annotations
+
+import configparser
+import fcntl
+import os
+import shutil
+import subprocess
+import time
+from pathlib import Path
+from typing import Iterable, List, Optional
+
+from . import config
+from . import sets as sets_mod
+from .sets import ROLE_XCURSOR_NAMES, CursorSet
+
+MARKER = ".cursor-manager"
+
+
+def _run(cmd: List[str], timeout=15) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+
+
+# --------------------------------------------------------------------------- current theme
+
+def current_theme() -> str:
+    """Theme currently configured for Plasma (falls back to gsettings / breeze)."""
+    rc = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "kcminputrc"
+    cp = configparser.ConfigParser(strict=False, interpolation=None)
+    try:
+        cp.read(rc)
+        name = cp.get("Mouse", "cursorTheme", fallback="").strip()
+        if name:
+            return name
+    except configparser.Error:
+        pass
+    try:
+        out = _run(["gsettings", "get", "org.gnome.desktop.interface", "cursor-theme"]).stdout.strip().strip("'")
+        if out:
+            return out
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return "breeze_cursors"
+
+
+def current_size() -> int:
+    rc = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "kcminputrc"
+    cp = configparser.ConfigParser(strict=False, interpolation=None)
+    try:
+        cp.read(rc)
+        return int(cp.get("Mouse", "cursorSize", fallback="24"))
+    except (configparser.Error, ValueError):
+        return 24
+
+
+def is_ours(theme: str) -> bool:
+    return theme.startswith(config.THEME_PREFIX)
+
+
+def original_theme() -> str:
+    """The user's theme before Cursor Manager touched anything (remembered in state)."""
+    st = config.load_state()
+    orig = st.get("original_theme")
+    if orig and not is_ours(orig):
+        return orig
+    cur = current_theme()
+    if is_ours(cur):
+        cur = "breeze_cursors"
+    config.save_state(original_theme=cur)
+    return cur
+
+
+# --------------------------------------------------------------------------- building
+
+def theme_dir(theme_name: str) -> Path:
+    return config.ICONS_DIR / theme_name
+
+
+def _build_signature(cs: CursorSet, cfg: dict) -> str:
+    hs = cfg.get("hotspots", {}).get(cs.id, [0, 0])
+    return f"{cs.signature}|{cfg['cursor_size']}|{hs[0]},{hs[1]}|{original_theme()}|v4"
+
+
+def is_built(cs: CursorSet, cfg: dict) -> bool:
+    marker = theme_dir(cs.theme_name) / MARKER
+    try:
+        return marker.read_text().strip() == _build_signature(cs, cfg)
+    except OSError:
+        return False
+
+
+class _BuildLock:
+    """Cross-process lock so the app and the daemon never build the same theme at once."""
+
+    def __init__(self, name: str):
+        config.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        self.path = config.CACHE_DIR / f"build-{name}.lock"
+        self.fh = None
+
+    def __enter__(self):
+        self.fh = open(self.path, "w")
+        fcntl.flock(self.fh, fcntl.LOCK_EX)
+        return self
+
+    def __exit__(self, *exc):
+        fcntl.flock(self.fh, fcntl.LOCK_UN)
+        self.fh.close()
+
+
+def build_theme(cs: CursorSet, cfg: dict, force=False) -> Path:
+    """Write ~/.local/share/icons/<theme>/ for the set. Cheap when already built."""
+    tdir = theme_dir(cs.theme_name)
+    if not force and is_built(cs, cfg):
+        return tdir
+    with _BuildLock(cs.theme_name):
+        if not force and is_built(cs, cfg):   # another process finished it while we waited
+            return tdir
+        return _build_theme_locked(cs, cfg, tdir)
+
+
+def _build_theme_locked(cs: CursorSet, cfg: dict, tdir: Path) -> Path:
+    from .formats import load_cursor, write_xcursor  # imported lazily: keeps Pillow out of the daemon
+    tmp = tdir.with_name(tdir.name + ".building")
+    if tmp.exists():
+        shutil.rmtree(tmp, ignore_errors=True)
+    cdir = tmp / "cursors"
+    cdir.mkdir(parents=True)
+    hotspot = tuple(cfg.get("hotspots", {}).get(cs.id, [0, 0]))
+    base_px = int(cfg["cursor_size"])
+    failed = False
+    for role, path in cs.roles.items():
+        names = ROLE_XCURSOR_NAMES.get(role, [])
+        if not names:
+            continue
+        try:
+            cursor = load_cursor(str(path), hotspot)
+        except Exception as exc:  # noqa: BLE001 - one bad file must not kill the theme
+            print(f"[cursor-manager] skipping {path}: {exc}")
+            failed = True
+            continue
+        primary = cdir / names[0]
+        write_xcursor(str(primary), cursor, base_px)
+        for alias in names[1:]:
+            link = cdir / alias
+            if not link.exists():
+                os.symlink(names[0], link)
+    inherits = original_theme()
+    (tmp / "index.theme").write_text(
+        "[Icon Theme]\n"
+        f"Name={cs.name}\n"
+        f"Comment=Generated by Cursor Manager from {cs.source.name}\n"
+        f"Inherits={inherits}\n"
+    )
+    (tmp / "cursor.theme").write_text(f"[Icon Theme]\nInherits={cs.theme_name}\n")
+    # A set with unreadable files gets no marker, so it is retried on the next build.
+    (tmp / MARKER).write_text("" if failed else _build_signature(cs, cfg))
+    if tdir.exists():
+        shutil.rmtree(tdir)
+    os.rename(tmp, tdir)
+    # Older toolkits only look in ~/.icons
+    config.LEGACY_ICONS_DIR.mkdir(parents=True, exist_ok=True)
+    legacy = config.LEGACY_ICONS_DIR / cs.theme_name
+    if legacy.is_symlink() or legacy.exists():
+        if legacy.is_symlink():
+            legacy.unlink()
+        else:
+            shutil.rmtree(legacy)
+    os.symlink(tdir, legacy)
+    return tdir
+
+
+def build_all(sets: Iterable[CursorSet], cfg: dict, force=False, progress=None) -> None:
+    sets = list(sets)
+    for i, cs in enumerate(sets):
+        if progress:
+            progress(i, len(sets), cs)
+        build_theme(cs, cfg, force=force)
+    prune(sets)
+
+
+def prune(keep: Iterable[CursorSet]) -> None:
+    """Remove themes we generated for sets that no longer exist."""
+    keep_names = {cs.theme_name for cs in keep}
+    for base in (config.ICONS_DIR, config.LEGACY_ICONS_DIR):
+        if not base.is_dir():
+            continue
+        for d in base.iterdir():
+            if not d.name.startswith(config.THEME_PREFIX) or d.name in keep_names:
+                continue
+            if d.is_symlink():
+                d.unlink()
+            elif (d / MARKER).exists():
+                shutil.rmtree(d, ignore_errors=True)
+    sets_mod.prune_extract_cache()
+
+
+def remove_all() -> None:
+    """Delete every theme this app generated (used by uninstall)."""
+    prune([])
+    try:
+        d = config.LEGACY_ICONS_DIR / "default" / "index.theme"
+        if d.exists() and config.THEME_PREFIX in d.read_text():
+            d.unlink()
+    except OSError:
+        pass
+
+
+# --------------------------------------------------------------------------- applying
+
+def apply_theme(theme_name: str, size: Optional[int] = None) -> str:
+    """Make theme_name the live cursor theme. Returns a short status message."""
+    size = size or current_size()
+    msgs = []
+    if shutil.which("plasma-apply-cursortheme"):
+        r = _run(["plasma-apply-cursortheme", "--size", str(size), theme_name])
+        out = (r.stdout + r.stderr).strip()
+        if r.returncode != 0:
+            raise RuntimeError(out.splitlines()[0] if out else f"plasma-apply-cursortheme failed ({r.returncode})")
+        msgs.append(out.splitlines()[-1] if out else f"plasma: applied {theme_name}")
+    else:
+        for tool, args in (("kwriteconfig6", None), ("kwriteconfig5", None)):
+            if shutil.which(tool):
+                _run([tool, "--file", "kcminputrc", "--group", "Mouse", "--key", "cursorTheme", theme_name])
+                _run([tool, "--file", "kcminputrc", "--group", "Mouse", "--key", "cursorSize", str(size)])
+                break
+    if shutil.which("gsettings"):
+        _run(["gsettings", "set", "org.gnome.desktop.interface", "cursor-theme", theme_name])
+        _run(["gsettings", "set", "org.gnome.desktop.interface", "cursor-size", str(size)])
+    # X11 / XWayland fallback used by toolkits that read ~/.icons/default
+    try:
+        d = config.LEGACY_ICONS_DIR / "default"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "index.theme").write_text(f"[Icon Theme]\nName=Default\nInherits={theme_name}\n")
+    except OSError:
+        pass
+    return "; ".join(msgs) or f"applied {theme_name}"
+
+
+def apply_set(cs: CursorSet, cfg: dict) -> str:
+    orig = original_theme()  # make sure the original is remembered before we switch
+    rebuilt = not is_built(cs, cfg)
+    build_theme(cs, cfg)
+    if current_theme() == cs.theme_name:
+        # Plasma refuses to re-apply the active theme and apps cache cursor images,
+        # so bounce through the original theme to force a reload.
+        apply_theme(orig)
+    msg = apply_theme(cs.theme_name)
+    if rebuilt:
+        msg += " (theme rebuilt)"
+    config.save_state(current_set=cs.id, current_theme=cs.theme_name, last_change=time.time())
+    return msg
+
+
+def restore_original() -> str:
+    theme = original_theme()
+    msg = apply_theme(theme)
+    config.save_state(current_set=None, current_theme=theme)
+    return msg

@@ -1,0 +1,23 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Cursor Manager
+GenericName=Cursor rotator
+Comment=Preview, test and rotate custom mouse cursors
+Exec="@PROJECT_DIR@/cursor-manager" gui
+Path=@PROJECT_DIR@
+Icon=@PROJECT_DIR@/assets/cursor-manager.svg
+Terminal=false
+StartupNotify=true
+StartupWMClass=cursor-manager
+Categories=Settings;DesktopSettings;Qt;
+Keywords=cursor;pointer;mouse;theme;
+Actions=Next;Stop;
+
+[Desktop Action Next]
+Name=Next cursor
+Exec="@PROJECT_DIR@/cursor-manager" next
+
+[Desktop Action Stop]
+Name=Stop rotation
+Exec="@PROJECT_DIR@/cursor-manager" stop
