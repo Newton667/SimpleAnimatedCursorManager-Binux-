@@ -37,7 +37,7 @@ own tools, so there is nothing to port to Windows or macOS.
 
 ```bash
 git clone https://github.com/Newton667/SimpleAnimatedCursorManager-Binux-.git
-cd SimpleAnimatedCursorManager-inux-
+cd SimpleAnimatedCursorManager-Binux-
 ./install.sh
 ```
 
