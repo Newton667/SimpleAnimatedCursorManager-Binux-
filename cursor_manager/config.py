@@ -17,11 +17,11 @@ BUNDLED_DIR = PROJECT_DIR / "assets" / "bundled"      # optional local "built-in
 # Places to get animated cursors, shown as links in the app: (name, url, blurb)
 CURSOR_SOURCES = [
     ("Maplequan", "https://ko-fi.com/maplequan",
-     "Hololive animated cursor packs; the ones this app was built and tested with."),
+     "Hololive animated cursor packs."),
     ("Noiire", "https://ko-fi.com/noiire/shop",
-     "Ko-fi shop with more animated cursor packs."),
+     "More animated cursor packs."),
     ("EbiEbiBeam", "https://ko-fi.com/I3I6H9UHF/shop",
-     "Ko-fi shop with animated cursor packs."),
+     "Animated cursor packs."),
 ]
 
 CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / APP_ID

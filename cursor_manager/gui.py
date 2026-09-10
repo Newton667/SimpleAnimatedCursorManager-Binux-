@@ -353,7 +353,7 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 0)
         splitter.setStretchFactor(2, 1)
-        splitter.setSizes([240, 360, 900])
+        splitter.setSizes([260, 360, 880])
 
         # bottom: rotation settings
         rot = QGroupBox("Rotation")
@@ -428,8 +428,8 @@ class MainWindow(QMainWindow):
     def _build_sidebar(self) -> QWidget:
         side = QWidget()
         side.setObjectName("sidebar")
-        side.setMinimumWidth(210)
-        side.setMaximumWidth(300)
+        side.setMinimumWidth(240)
+        side.setMaximumWidth(340)
         side.setStyleSheet("""
             #sidebar { background: palette(alternate-base); }
             #sidebar QFrame#card { background: palette(base); border: 1px solid palette(mid); border-radius: 8px; }
@@ -460,14 +460,18 @@ class MainWindow(QMainWindow):
         for name, url, blurb in config.CURSOR_SOURCES:
             card = QFrame()
             card.setObjectName("card")
+            card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
             cl = QVBoxLayout(card)
             cl.setContentsMargins(10, 10, 10, 10)
             cl.setSpacing(6)
+            cl.setSizeConstraint(QVBoxLayout.SizeConstraint.SetMinimumSize)   # grow with wrapped text
             t = QLabel(name)
             t.setObjectName("cardTitle")
+            t.setWordWrap(True)
             d = QLabel(blurb)
             d.setObjectName("muted")
             d.setWordWrap(True)
+            d.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.MinimumExpanding)
             b = QPushButton("☕  Open on Ko-fi")
             b.setObjectName("kofi")
             b.setToolTip(url)
