@@ -9,7 +9,7 @@ from pathlib import Path
 APP_ID = "cursor-manager"
 APP_NAME = "Cursor Manager"
 AUTHOR = "Newton667"
-PROJECT_URL = "https://github.com/Newton667/SimpleAnimatedCursorManager-inux-"
+PROJECT_URL = "https://github.com/Newton667/SimpleAnimatedCursorManager-Binux-"
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 VENV_DIR = PROJECT_DIR / ".venv"
 DEFAULT_IMAGES_DIR = PROJECT_DIR / "Cursors_Imgs"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cursor Manager command line.  https://github.com/Newton667/SimpleAnimatedCursorManager-inux-
+"""Cursor Manager command line.  https://github.com/Newton667/SimpleAnimatedCursorManager-Binux-
 
   cursor-manager [gui]        open the app (default); add --hidden to start in the tray only
   cursor-manager daemon       run the rotation loop in the foreground
