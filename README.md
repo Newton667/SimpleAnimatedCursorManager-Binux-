@@ -38,8 +38,11 @@ own tools, so there is nothing to port to Windows or macOS.
 ```bash
 git clone https://github.com/Newton667/SimpleAnimatedCursorManager-Binux-.git
 cd SimpleAnimatedCursorManager-Binux-
-./install.sh
+bash install.sh
 ```
+
+(`./install.sh` works too; `bash install.sh` just also covers a download that lost its
+executable bit. The installer restores the bits on the other scripts itself.)
 
 `install.sh` does everything in one go:
 

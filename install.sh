@@ -65,7 +65,7 @@ bold "Installing Python dependencies (PySide6, Pillow) - the first run can take 
 .venv/bin/python -m pip install --quiet -r requirements.txt
 
 # ---------------------------------------------------------------- desktop integration
-chmod +x cursor-manager
+chmod +x cursor-manager install.sh tools/*.py 2>/dev/null || true
 ./cursor-manager check || warn "Some checks failed - the app may still run, see the notes above."
 ./cursor-manager install >/dev/null
 bold "Added 'Cursor Manager' to your application menu."
