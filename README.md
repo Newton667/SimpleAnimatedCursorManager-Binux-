@@ -48,8 +48,10 @@ cd SimpleAnimatedCursorManager-Binux-
 2. Creates a private virtualenv in `.venv` and installs the two dependencies there
    (PySide6 and Pillow). Nothing is installed system-wide. If your distro already ships
    them, the venv reuses them and nothing big is downloaded.
-3. Adds **Cursor Manager** to your application menu and asks whether the rotation should
-   start at login.
+3. Adds **Cursor Manager** to your application menu, drops a double-clickable
+   `cursor-manager.desktop` next to the code, and asks whether the rotation should start
+   at login. Both entries are generated from `cursor-manager.desktop.in` with the folder's
+   real path, which is why they are not committed to git.
 
 Run it again any time; it is safe to repeat. If you move the folder afterwards, run
 `./install.sh` again so the menu and autostart entries point to the new place.
@@ -59,7 +61,8 @@ Prefer to do it by hand? `python3 -m venv --system-site-packages .venv`, then
 
 ## First start
 
-Launch **Cursor Manager** from the application menu (or run `./cursor-manager`).
+Launch **Cursor Manager** from the application menu, double-click `cursor-manager.desktop`
+in the project folder, or run `./cursor-manager`.
 On the first start it asks **where your cursors are**: pick the folder you keep your
 cursor packs in, or accept the default `Cursors_Imgs` folder inside the project. Only the
 built-in demo set comes with the app, so grab a few packs from the artists linked in the
