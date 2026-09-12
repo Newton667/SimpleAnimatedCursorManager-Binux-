@@ -203,9 +203,9 @@ class MainWindow(QMainWindow):
         self._size_timer.setSingleShot(True)
         self._size_timer.setInterval(700)
         self._size_timer.timeout.connect(self._push_active_set)
-        self._build_tray()
         self._tray_theme = None
         self._quitting = False
+        self._build_tray()
         self.clock = QTimer(self)
         self.clock.setInterval(33)
         self.clock.timeout.connect(self._tick)
@@ -409,11 +409,16 @@ class MainWindow(QMainWindow):
         self.autostart_cb = QCheckBox("Start rotation when I log in")
         self.autostart_cb.setChecked(startup.autostart_enabled())
         self.autostart_cb.toggled.connect(self._on_autostart)
+        self.tray_autostart_cb = QCheckBox("Show tray icon when I log in")
+        self.tray_autostart_cb.setToolTip("Opens Cursor Manager hidden in the system tray at login")
+        self.tray_autostart_cb.setChecked(startup.tray_autostart_enabled())
+        self.tray_autostart_cb.toggled.connect(self._on_tray_autostart)
         r2.addWidget(self.start_btn)
         r2.addWidget(self.next_btn)
         r2.addWidget(self.restore_btn)
         r2.addSpacing(16)
         r2.addWidget(self.autostart_cb)
+        r2.addWidget(self.tray_autostart_cb)
         r2.addStretch(1)
         self.defaults_btn = QPushButton("Reset to defaults")
         self.defaults_btn.setToolTip("Every 10 minutes, in order, 32 px cursor size")
@@ -510,9 +515,14 @@ class MainWindow(QMainWindow):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
 
     # ---- system tray ------------------------------------------------------------
-    def _build_tray(self):
+    def _build_tray(self, retries_left: int = 40):
         self.tray: Optional[QSystemTrayIcon] = None
         if not QSystemTrayIcon.isSystemTrayAvailable():
+            if retries_left > 0:
+                # At login the panel's tray may not exist yet: try again for ~2 minutes.
+                QTimer.singleShot(3000, lambda: self._build_tray(retries_left - 1))
+            elif not self.isVisible():
+                self.show_window()          # never got a tray: don't stay invisible
             return
         self.tray = QSystemTrayIcon(app_icon(), self)
         self.tray.setToolTip("Cursor Manager")
@@ -543,6 +553,7 @@ class MainWindow(QMainWindow):
         self.tray.setContextMenu(menu)
         self.tray.activated.connect(self._on_tray_activated)
         self.tray.show()
+        self._tray_theme = None              # (re)paint the icon for the applied cursor
 
     def _on_tray_activated(self, reason):
         if reason in (QSystemTrayIcon.ActivationReason.Trigger, QSystemTrayIcon.ActivationReason.DoubleClick):
@@ -950,6 +961,14 @@ class MainWindow(QMainWindow):
             startup.set_autostart(on)
             self.statusBar().showMessage(
                 f"Rotation will {'start' if on else 'not start'} at login ({config.AUTOSTART_FILE})", 6000)
+        except OSError as exc:
+            QMessageBox.warning(self, "Autostart", f"Could not write the autostart entry:\n{exc}")
+
+    def _on_tray_autostart(self, on: bool):
+        try:
+            startup.set_tray_autostart(on)
+            self.statusBar().showMessage(
+                f"Tray icon will {'appear' if on else 'not appear'} at login", 6000)
         except OSError as exc:
             QMessageBox.warning(self, "Autostart", f"Could not write the autostart entry:\n{exc}")
 

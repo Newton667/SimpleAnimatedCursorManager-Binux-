@@ -31,6 +31,7 @@ RUNTIME_DIR = Path(os.environ.get("XDG_RUNTIME_DIR", f"/tmp/{os.getuid()}"))
 ICONS_DIR = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "icons"
 LEGACY_ICONS_DIR = Path.home() / ".icons"
 AUTOSTART_FILE = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "autostart" / f"{APP_ID}.desktop"
+TRAY_AUTOSTART_FILE = AUTOSTART_FILE.with_name(f"{APP_ID}-tray.desktop")
 APPS_DIR = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "applications"
 
 CONFIG_FILE = CONFIG_DIR / "config.json"

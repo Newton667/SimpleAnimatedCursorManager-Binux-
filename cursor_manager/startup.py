@@ -43,6 +43,33 @@ def set_autostart(enabled: bool) -> None:
     )
 
 
+def tray_autostart_enabled() -> bool:
+    return config.TRAY_AUTOSTART_FILE.exists()
+
+
+def set_tray_autostart(enabled: bool) -> None:
+    """Start the app hidden in the system tray at login."""
+    if not enabled:
+        try:
+            config.TRAY_AUTOSTART_FILE.unlink()
+        except FileNotFoundError:
+            pass
+        return
+    config.TRAY_AUTOSTART_FILE.parent.mkdir(parents=True, exist_ok=True)
+    config.TRAY_AUTOSTART_FILE.write_text(
+        "[Desktop Entry]\n"
+        "Type=Application\n"
+        "Name=Cursor Manager (tray)\n"
+        "Comment=Cursor Manager icon in the system tray\n"
+        f"Exec={_exec('gui --hidden')}\n"
+        f"Icon={ICON_FILE}\n"
+        "Terminal=false\n"
+        "X-GNOME-Autostart-enabled=true\n"
+        "X-KDE-autostart-after=panel\n"
+        "X-KDE-StartupNotify=false\n"
+    )
+
+
 def render_desktop_entry() -> str:
     """Fill the repo's .desktop template with this checkout's absolute path."""
     return DESKTOP_TEMPLATE.read_text().replace("@PROJECT_DIR@", str(config.PROJECT_DIR))

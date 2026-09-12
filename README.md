@@ -89,7 +89,8 @@ Then drop cursor packs into that folder and press **Rescan**.
 - **Test area**: hover the boxes to try each cursor. Switch to *Show what is applied
   system-wide right now* to check the real desktop cursor.
 - **Rotation** (bottom): interval, order, cursor size, Start/Stop, Next cursor, Restore
-  original cursor, run at login, Reset to defaults. The big preview on the right is the
+  original cursor, *Start rotation when I log in*, *Show tray icon when I log in* (the app
+  opens hidden in the tray), Reset to defaults. The big preview on the right is the
   cursor currently applied; click it to jump to that set in the list.
 - **Get more cursors** (left sidebar): links to artists who make animated cursor packs.
 
@@ -121,7 +122,8 @@ The sidebar links to these creators. Their zips drop straight into your folder:
 ./cursor-manager folder [DIR]    show or change your cursors folder
 ./cursor-manager apply "Ina"     apply one set by (partial) name
 ./cursor-manager restore         back to your original cursor theme
-./cursor-manager autostart on|off
+./cursor-manager autostart on|off  rotation at login
+./cursor-manager tray on|off       tray icon at login
 ./cursor-manager check           verify Python, dependencies and desktop tools
 ./cursor-manager uninstall       remove themes and menu/autostart entries (--purge: settings too)
 ```

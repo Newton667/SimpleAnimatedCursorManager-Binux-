@@ -13,6 +13,7 @@
                               --pending: only sets not built yet   --set ID: one set   --quiet
   cursor-manager restore      go back to the original cursor theme
   cursor-manager autostart on|off   run the rotation at login
+  cursor-manager tray on|off        show the tray icon at login (app starts hidden)
   cursor-manager install      add Cursor Manager to the application menu
   cursor-manager check        verify Python, dependencies and desktop tools
   cursor-manager uninstall    remove themes, menu/autostart entries (add --purge to drop settings too)
@@ -110,6 +111,7 @@ def _uninstall(purge: bool) -> int:
     except Exception as exc:  # noqa: BLE001
         print(f"could not restore the original cursor: {exc}")
     startup.set_autostart(False)
+    startup.set_tray_autostart(False)
     startup.remove_menu_entry()
     theme.remove_all()
     shutil.rmtree(config.CACHE_DIR, ignore_errors=True)
@@ -234,7 +236,8 @@ def main(argv):
         print(f"original theme: {st.get('original_theme')}")
         if st.get("next_change"):
             print(f"next change in: {max(0, int(st['next_change'] - time.time()))} s")
-        print(f"autostart     : {'on' if startup.autostart_enabled() else 'off'}")
+        print(f"autostart     : rotation {'on' if startup.autostart_enabled() else 'off'}, "
+              f"tray {'on' if startup.tray_autostart_enabled() else 'off'}")
         return 0
     if cmd == "list":
         disabled = set(cfg.get("disabled_sets", []))
@@ -278,6 +281,11 @@ def main(argv):
         on = len(argv) > 2 and argv[2].lower() in ("on", "1", "true", "yes")
         startup.set_autostart(on)
         print(f"autostart {'enabled' if on else 'disabled'} ({config.AUTOSTART_FILE})")
+        return 0
+    if cmd == "tray":
+        on = len(argv) > 2 and argv[2].lower() in ("on", "1", "true", "yes")
+        startup.set_tray_autostart(on)
+        print(f"tray icon at login {'enabled' if on else 'disabled'} ({config.TRAY_AUTOSTART_FILE})")
         return 0
     if cmd == "install":
         print(f"installed {startup.install_menu_entry()}")
